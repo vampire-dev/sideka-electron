@@ -1,62 +1,70 @@
 /// <reference path="../../typings/tsd.d.ts" />
+
 var request = require('request');
 var path = require('path');
-var { remote } = require('electron');
+var { remote } = require('electron'); 
 var jetpack = require('fs-jetpack'); // module loaded from npm
 var $ = require('jquery');
 var crypto = require('crypto');
 var fs = require('fs');
+
 var app = remote.app;
 var DATA_DIR = app.getPath("userData");
 var FEEDS_DIR = path.join(DATA_DIR, "feeds");
 jetpack.dir(FEEDS_DIR);
+
 var fileUrl = (str) => {
     if (typeof str !== 'string') {
         throw new Error('Expected a string');
     }
+
     var pathName = path.resolve(str).replace(/\\/g, '/');
+
     // Windows drive letter must be prefixed with a slash
     if (pathName[0] !== '/') {
         pathName = '/' + pathName;
     }
+
     return encodeURI('file://' + pathName);
 };
+
 var feedapi = {
-    getFeed: function (callback) {
+    getFeed: function(callback){
         var that = this;
         $.get({
             url: "http://kabar.sideka.id/feed",
             dataType: "xml",
-            success: function (data) {
+            success: function(data) {
                 var fileName = path.join(FEEDS_DIR, "feeds.xml");
                 jetpack.write(fileName, (new XMLSerializer()).serializeToString(data));
-                callback(data);
+                callback(data);          
             }
         })
-            .fail(function () {
+        .fail(function(){
             $.get({
                 url: fileUrl(path.join(FEEDS_DIR, "feeds.xml")),
                 dataType: "xml",
-                success: function (data) {
-                    callback(data);
+                success: function(data) {
+                    callback(data);              
                 }
-            });
+            })
         });
+        
     },
-    getImage: function (div, url, callback) {
+    getImage: function(div, url, callback){
         var hash = crypto.createHash('sha512').update(url).digest('hex');
         var imageFile = path.join(FEEDS_DIR, hash);
         var imageUrl = fileUrl(imageFile);
-        if (jetpack.exists(imageFile)) {
+        if(jetpack.exists(imageFile)){
             callback(imageUrl);
-        }
-        else {
-            $.get(url, function (html) {
+        } else {
+            $.get(url, function(html){
                 $(div).html("").append($(html));
                 var ogImage = $("meta[property='og:image']", div).attr("content");
-                if (ogImage) {
+                if(ogImage){
                     request(ogImage)
-                        .on("response", function (response) {
+
+                    .on("response", function(response){
                         var stream = fs.createWriteStream(imageFile);
                         response.pipe(stream).on('finish', function () {
                             callback(imageUrl);
@@ -66,5 +74,5 @@ var feedapi = {
             });
         }
     },
-};
+}
 export default feedapi;

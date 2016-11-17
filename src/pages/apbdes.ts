@@ -1,147 +1,164 @@
 /// <reference path="../../typings/tsd.d.ts" />
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
+
 var { Component, ApplicationRef, NgZone } = require('@angular/core');
 var path = require('path');
 var fs = require('fs');
 var $ = require('jquery');
 var { remote, app, shell } = require('electron');
 var jetpack = require('fs-jetpack');
-var Docxtemplater = require('docxtemplater');
+var Docxtemplater = require('docxtemplater'); 
 var Handsontable = require('./handsontablep/dist/handsontable.full.js');
+
 import schemas from '../schemas';
-import { initializeTableSearch } from '../helpers/table';
-import { apbdesImporterConfig, Importer } from '../helpers/importer';
+import  { initializeTableSearch, initializeTableCount, initializeTableSelected } from '../helpers/table';
+import  { apbdesImporterConfig, Importer } from '../helpers/importer';
 import { exportApbdes } from '../helpers/exporter';
 import dataapi from '../stores/dataapi';
 import DiffProps from '../helpers/apbdesDiff';
+
 window['jQuery'] = $;
 require('./node_modules/bootstrap/dist/js/bootstrap.js');
+
 var app = remote.app;
 var hot;
+
 const init = () => {
-    window.addEventListener('resize', function (e) {
-        if (hot)
+    window.addEventListener('resize', function(e){
+        if(hot)
             hot.render();
-    });
-    $('.modal').each(function (i, modal) {
+    })
+    $('.modal').each(function(i, modal){
         $(modal).on('hidden.bs.modal', function () {
-            if (hot)
+            if(hot)
                 hot.listen();
-        });
+        })
     });
     schemas.registerCulture(window);
-};
+}
+
 class SumCounter {
-    constructor(hot) {
+    hot: any;
+    sums: any;
+
+    constructor(hot){
         this.hot = hot;
         this.sums = {};
     }
-    calculateAll() {
+    
+    calculateAll(){
         var rows = this.hot.getSourceData().map(a => schemas.arrayToObj(a, schemas.apbdes));
         this.sums = {};
-        for (var i = 0; i < rows.length; i++) {
+        for(var i = 0; i < rows.length; i++){
             var row = rows[i];
-            if (row.kode_rekening && !this.sums[row.kode_rekening]) {
+            if(row.kode_rekening && !this.sums[row.kode_rekening]){
                 this.getValue(row, i, rows);
             }
         }
     }
-    getValue(row, index, rows) {
+    
+    getValue(row, index, rows){
         var sum = 0;
         var dotCount = row.kode_rekening.split(".").length;
         var i = index + 1;
         var allowDetail = true;
-        while (i < rows.length) {
-            var nextRow = rows[i];
+        while(i < rows.length){
+            var nextRow  = rows[i];
             var nextDotCount = nextRow.kode_rekening ? nextRow.kode_rekening.split(".").length : 0;
-            if (!nextRow.kode_rekening && allowDetail) {
-                if (Number.isFinite(nextRow.anggaran)) {
+            if(!nextRow.kode_rekening && allowDetail){
+                if(Number.isFinite(nextRow.anggaran)){
                     sum += nextRow.anggaran;
                 }
-            }
-            else if (nextRow.kode_rekening && nextRow.kode_rekening.startsWith(row.kode_rekening) && (dotCount + 1 == nextDotCount)) {
+            } else if(nextRow.kode_rekening && nextRow.kode_rekening.startsWith(row.kode_rekening) && (dotCount + 1 == nextDotCount)){
                 allowDetail = false;
                 sum += this.getValue(nextRow, i, rows);
-            }
-            else if (nextRow.kode_rekening && !nextRow.kode_rekening.startsWith(row.kode_rekening)) {
+            } else if(nextRow.kode_rekening && !nextRow.kode_rekening.startsWith(row.kode_rekening) ){
                 break;
             }
             i++;
         }
         this.sums[row.kode_rekening] = sum;
-        if (Number.isFinite(row.anggaran)) {
-            if (sum == 0 && row.kode_rekening) {
+        if(Number.isFinite(row.anggaran)){
+            if(sum == 0 && row.kode_rekening){
+                //this.sums[row.kode_rekening] = row.anggaran;
             }
             return row.anggaran;
         }
         return sum;
     }
-    calculateBottomUp(index) {
+    
+    calculateBottomUp(index){
     }
 }
+
 const initSheet = (subType) => {
-    var sheetContainer = document.getElementById('sheet-' + subType);
+    var sheetContainer = document.getElementById('sheet-'+subType);
     var result = new Handsontable(sheetContainer, {
         data: [],
         topOverlay: 34,
+
         rowHeaders: true,
         colHeaders: schemas.getHeader(schemas.apbdes),
         columns: schemas.apbdes,
+
         colWidths: schemas.getColWidths(schemas.apbdes),
         rowHeights: 23,
+        
         //columnSorting: true,
         //sortIndicator: true,
+        
         renderAllRows: false,
         outsideClickDeselects: false,
         autoColumnSize: false,
         search: true,
         //filters: true,
         contextMenu: ['row_above', 'remove_row'],
+        //dropdownMenu: ['filter_by_condition', 'filter_action_bar'],
     });
     result.sumCounter = new SumCounter(result);
-    result.addHook('afterChange', function (changes, source) {
+    result.addHook('afterChange', function(changes, source){
         if (source === 'edit' || source === 'undo' || source === 'autofill') {
             var rerender = false;
-            changes.forEach(function (item) {
-                var row = item[0], col = item[1], prevValue = item[2], value = item[3];
-                if (col == 2) {
+            changes.forEach(function(item){
+                 var row = item[0],
+                    col = item[1],
+                    prevValue = item[2],
+                    value = item[3];
+                    
+                 if(col == 2){
                     rerender = true;
-                }
+                 }
             });
-            if (rerender) {
+            if(rerender){
                 result.sumCounter.calculateAll();
                 result.render();
             }
         }
     });
     return result;
-};
+}
+
 const isCodeLesserThan = (code1, code2) => {
-    if (!code2)
+    if(!code2)
         return false;
+
     var splitted1 = code1.split(".").map(s => parseInt(s));
     var splitted2 = code2.split(".").map(s => parseInt(s));
     var min = Math.min(splitted1.length, splitted2.length);
-    for (var i = 0; i < min; i++) {
-        if (splitted1[i] > splitted2[i]) {
+    for(var i = 0; i < min; i++){
+        if(splitted1[i] > splitted2[i]){ 
             return false;
         }
-        if (splitted1[i] < splitted2[i]) {
+        if(splitted1[i] < splitted2[i]){ 
             return true;
         }
     }
-    if (splitted1.length < splitted2.length)
+
+    if(splitted1.length < splitted2.length) 
         return true;
+        
     return false;
 };
+
 const createDefaultApbdes = () => {
     return [
         ["1", "Pendapatan"],
@@ -170,188 +187,223 @@ const createDefaultApbdes = () => {
         ["3.2.1", "Pembentukan Dana Cadangan"],
         ["3.2.2", "Penyertaan Modal Desa"],
     ];
-};
-let ApbdesComponent = class ApbdesComponent extends DiffProps {
-    constructor(ApplicationRef, NgZone) {
+}
+
+@Component({
+    selector: 'apbdes',
+    templateUrl: 'templates/apbdes.html'
+})
+export default class ApbdesComponent extends DiffProps{
+    appRef: any;
+    zone: any;
+    importer: any;
+    tableSearchers: any;
+    tableSearcher: any;
+    activeSubType: any;
+    subTypes: any;
+    savingMessage: any;
+    static parameters = [ApplicationRef, NgZone];
+
+    constructor(ApplicationRef, NgZone){
         super(app);
         this.appRef = ApplicationRef;
         this.zone = NgZone;
     }
-    ngOnInit() {
-        $("title").html("APBDes - " + dataapi.getActiveAuth().desa_name);
+
+    ngOnInit(): void {
+        $("title").html("APBDes - " +dataapi.getActiveAuth().desa_name);
         init();
+        
         this.importer = new Importer(apbdesImporterConfig);
         this.hots = {};
         this.tableSearchers = {};
         this.initialDatas = {};
         var ctrl = this;
-        var keyup = (e) => {
+
+        var keyup = (e)  => {
             //ctrl+s
-            if (e.ctrlKey && e.keyCode == 83) {
+            if (e.ctrlKey && e.keyCode == 83){
                 ctrl.openSaveDiffDialog();
                 e.preventDefault();
                 e.stopPropagation();
             }
-        };
+        }
         document.addEventListener('keyup', keyup, false);
+
         this.activeSubType = null;
         dataapi.getContentSubTypes("apbdes", subTypes => {
             this.subTypes = subTypes;
             this.appRef.tick();
-            if (this.subTypes.length)
+            if(this.subTypes.length)
                 this.loadSubType(subTypes[0]);
         });
         this.initDiffComponent();
     }
-    loadSubType(subType) {
-        if (!this.hots[subType]) {
+
+    loadSubType(subType): boolean {
+         if(!this.hots[subType]){
             this.hots[subType] = initSheet(subType);
             this.hot = hot = this.hots[subType];
-            var inputSearch = document.getElementById("input-search-" + subType);
+            var inputSearch = document.getElementById("input-search-"+subType);
             this.tableSearchers[subType] = initializeTableSearch(hot, document, inputSearch, () => this.activeSubType == subType);
             this.tableSearcher = this.tableSearchers[subType];
+    
             dataapi.getContent("apbdes", subType, [], content => {
-                this.zone.run(() => {
+                this.zone.run( () => {
                     this.activeSubType = subType;
                     this.initialDatas[subType] = JSON.parse(JSON.stringify(content.data));
+                    
                     this.hot.loadData(content.data);
                     this.hot.sumCounter.calculateAll();
                     this.hot.validateCells();
                     setTimeout(() => {
                         this.hot.render();
-                    }, 500);
+                    },500);
                 });
             });
-        }
-        else {
+        } else {
             this.hot = hot = this.hots[subType];
             this.tableSearcher = this.tableSearchers[subType];
             this.activeSubType = subType;
             setTimeout(() => {
                 this.hot.render();
-            }, 0);
+            },0);
         }
         return false;
     }
-    importExcel() {
+
+    importExcel(){
         var files = remote.dialog.showOpenDialog();
-        if (files && files.length) {
+        if(files && files.length){
             this.importer.init(files[0]);
             $("#modal-import-columns").modal("show");
         }
     }
-    doImport() {
+
+    doImport(){
         $("#modal-import-columns").modal("hide");
         var objData = this.importer.getResults();
         var data = objData.map(o => schemas.objToArray(o, schemas.apbdes));
+
         hot.loadData(data);
         hot.sumCounter.calculateAll();
         hot.validateCells();
-        setTimeout(function () {
+        setTimeout(function(){
             hot.render();
-        }, 500);
+        },500);
     }
-    exportExcel() {
+
+    exportExcel(){
         var data = hot.getSourceData();
-        for (var i = 0; i < data.length; i++) {
+        for(var i = 0; i < data.length; i++){
             var row = data[i];
             var value = row[2];
-            if (!Number.isFinite(value) && !value) {
+            if(!Number.isFinite(value) && !value){
                 var code = row[0];
-                if (code) {
+                if(code){
                     row[2] = hot.sumCounter.sums[code];
                 }
             }
         }
         exportApbdes(data, "Apbdes");
     }
-    openAddRowDialog() {
+
+    openAddRowDialog(){
         var code = null;
         var selected = this.hot.getSelected();
-        if (selected) {
+        if(selected){
             var i = selected[0];
-            while (!code && Number.isFinite(i) && i >= 0) {
+            while(!code && Number.isFinite(i) && i >= 0){
                 code = this.hot.getDataAtCell(i, 0);
                 i--;
             }
         }
-        if (code) {
+        if(code){
             $("input[name='account_code']").val(code);
         }
         $("#modal-add").modal("show");
         setTimeout(() => {
             this.hot.unlisten();
-            if (code) {
+            if(code){
                 $("input[name='account_code']").select();
             }
             $("input[name='account_code']").focus();
         }, 500);
         return false;
     }
-    addRow() {
+
+    addRow(){
         var data = $("#form-add").serializeArray().map(i => i.value);
         var sourceData = hot.getSourceData();
         var position = 0;
-        for (; position < sourceData.length; position++) {
-            if (isCodeLesserThan(data[0], sourceData[position][0]))
+        for(;position < sourceData.length; position++){
+            if(isCodeLesserThan(data[0], sourceData[position][0]))
                 break;
-        }
-        ;
-        if (data[1] == "on") {
-            data[0] = "";
-            data.splice(1, 1);
-        }
-        ;
+        };
+        if(data[1]=="on"){
+            data[0]="";
+            data.splice(1,1)
+        };
         hot.alter("insert_row", position);
         hot.populateFromArray(position, 0, [data], position, 3, null, 'overwrite');
-        hot.selection.setRangeStart(new Handsontable.WalkontableCellCoords(position, 0));
-        hot.selection.setRangeEnd(new Handsontable.WalkontableCellCoords(position, 3));
+        hot.selection.setRangeStart(new Handsontable.WalkontableCellCoords(position,0));
+        hot.selection.setRangeEnd(new Handsontable.WalkontableCellCoords(position,3));
         $('#form-add')[0].reset();
     }
-    addOneRow() {
+
+    addOneRow(){
         this.addRow();
         $("#modal-add").modal("hide");
     }
-    addOneRowAndAnother() {
+
+    addOneRowAndAnother(){
         var code = $("input[name='account_code']").val();
         this.addRow();
         $("input[name='account_code']").focus().val(code).select();
         return false;
     }
-    openNewSubTypeDialog() {
+
+     openNewSubTypeDialog(){
         $("#modal-new-year").modal("show");
-        setTimeout(function () {
-            if (hot)
+        setTimeout(function(){
+            if(hot)
                 hot.unlisten();
             $("input[name='year']").focus();
         }, 500);
         return false;
     }
-    createNewSubType() {
+
+    createNewSubType(){
         var year = $("#form-new-year input[name='year']").val();
         var is_perubahan = $("#form-new-year input[name='is_perubahan']")[0].checked;
         var subType = year;
-        if (is_perubahan)
-            subType = subType + "p";
+        if(is_perubahan)
+            subType = subType+"p";
+            
         //TODO: show error already exists
-        if (this.subTypes.filter(s => s == subType).length)
+        if(this.subTypes.filter(s => s == subType).length)
             return;
+          
         this.activeSubType = subType;
         this.subTypes.push(subType);
         this.appRef.tick();
+        
         this.hots[subType] = initSheet(subType);
         this.hot = hot = this.hots[subType];
         hot.loadData(createDefaultApbdes());
         hot.sumCounter.calculateAll();
         hot.validateCells();
         this.initialDatas[subType] = [];
-        var inputSearch = document.getElementById("input-search-" + subType);
+
+        var inputSearch = document.getElementById("input-search-"+subType);
         this.tableSearchers[subType] = initializeTableSearch(hot, document, inputSearch, () => this.activeSubType == subType);
         this.tableSearcher = this.tableSearchers[subType];
+        
         $("#modal-new-year").modal("hide");
         return false;
     }
-    saveContent() {
+
+    saveContent(){
         $("#modal-save-diff").modal("hide");
         var count = 0;
         this.diffs.subTypes.filter(s => this.diffs.diffs[s].total).forEach(subType => {
@@ -361,30 +413,22 @@ let ApbdesComponent = class ApbdesComponent extends DiffProps {
                 timestamp: timestamp,
                 data: hot.getSourceData()
             };
+            
             var that = this;
             that.savingMessage = "Menyimpan...";
-            dataapi.saveContent("apbdes", subType, content, function (err, response, body) {
+            dataapi.saveContent("apbdes", subType, content, function(err, response, body){
                 count -= 1;
-                that.savingMessage = "Penyimpanan " + (err ? "gagal" : "berhasil");
-                if (!err) {
+                that.savingMessage = "Penyimpanan "+ (err ? "gagal" : "berhasil");
+                if(!err){
                     that.initialDatas[subType] = JSON.parse(JSON.stringify(content.data));
-                    if (count == 0)
+                    if(count == 0)
                         that.afterSave();
                 }
-                setTimeout(function () {
+                setTimeout(function(){
                     that.savingMessage = null;
                 }, 2000);
             });
         });
         return false;
     }
-};
-ApbdesComponent.parameters = [ApplicationRef, NgZone];
-ApbdesComponent = __decorate([
-    Component({
-        selector: 'apbdes',
-        templateUrl: 'templates/apbdes.html'
-    }), 
-    __metadata('design:paramtypes', [Object, Object])
-], ApbdesComponent);
-export default ApbdesComponent;
+}

@@ -1,4 +1,6 @@
-import $ from 'jquery';
+/// <reference path="../typings/tsd.d.ts" />
+
+var $ =  require('jquery');
 
 var pendudukSchema = [
     {
@@ -495,8 +497,7 @@ var schemas = {
             , formats: {
                 fourDigits: "4 a", fullWithTwoDecimals: "$ ,0.00", fullWithTwoDecimalsNoCurrency: ",0.00", fullWithNoDecimals: "$ ,0"
             }
-        }
-        ;
+        };
         // CommonJS
         window.numbro.culture(a.cultureCode, a);
     }
